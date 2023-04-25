@@ -1,0 +1,266 @@
+##############SNP Filtering Steps for Galápagos Mockingbirds##############
+#This filtering scheme is designed after Filtering Scheme 6 proposed by O'Leary et al. 2018
+#in order to retain private alleles as much as possible
+
+#Get individual missingness
+'''{bash}
+
+vcftools --gzvcf mocks57_allrawsnps.vcf --missing-indv --out RawMissing
+
+'''
+
+#Filter by minimum read depth and quality score using SNPfiltR (DeRaad 2022) 
+#SNPfiltR was used because we wanted to only exclude sites on a per-individual basis based on read depth,
+#Rather than removing entire sites like VCFfilter would
+'''{r}
+
+library(SNPfiltR)
+library(vcfR)
+library(memuse)
+#Read the VCF into vcfR
+mockingbirds<-read.vcfR("/home/jaa53/galmocks/mocks57_allrawsnps.vcf")
+#Filter individual sites with a minimum read depth of 8 and a minimum quality score of 30
+mockingbirds<-hard_filter(mockingbirds,depth=8, gq=30)
+setwd("~/galmocks/")
+#Save the new vcf
+write.vcf(mockingbirds,file="MockDepthFilter.vcf.gz", APPEND = F)
+
+'''
+
+
+'''{bash}
+#Filter by SNPs by minimum mean depth=15
+vcftools --gzvcf MockDepthFilter.vcf.gz --out MockDP8minqual30meanDP15 --min-meanDP 15 --recode --recode-INFO-all
+
+#Remove sites with geno <50% (--max-missing 0.5)
+vcftools --vcf MockDP8minqual30meanDP15.recode.vcf --max-missing 0.5 --recode --recode-INFO-all --out MockDP8minqual30meanDP15geno50
+
+#Get individual missingness for geno 50 vcf
+vcftools --vcf MockDP8minqual30meanDP15geno50.recode.vcf --out missinggeno50 --missing-indv
+
+'''
+
+#Create list of indvs with >90% missingness
+'''{r}
+#Read the missingness output
+imiss<-read.table("/home/jaa53/galmocks/missinggeno50.imiss", header=T, stringsAsFactors = F)
+#Create a list of indviduals with >90% missingness
+LQ_indv <- imiss %>%
+  filter(F_MISS > 0.9) %>%
+  select(INDV)
+#Output that list as a text file
+write.table(LQ_indv, "/home/jaa53/galmocks/LQ_indvgeno50",col.names=F, row.names=F, quote=F)
+
+'''
+
+#Remove indvs in list - this step was not necessary as no indvs had >90% indvidual missingness
+#However, I proceed with file naming as if the filtering had occurred
+'''{bash}
+
+vcftools --vcf MockDP8minqual30meanDP15geno50.recode.vcf --out MockDP8minqual30meanDP15geno50imiss90 --recode --recode-INFO-all --remove LQ_indvgeno50
+
+#Remove sites with geno <60 (--max-missing 0.6)
+vcftools --vcf MockDP8minqual30meanDP15geno50imiss90.recode.vcf --max-missing 0.6 --recode --recode-INFO-all --out MockDP8minqual30meanDP15geno60imiss90
+
+#Get individual missingness for geno 60 vcf
+vcftools --vcf MockDP8minqual30meanDP15geno60imiss90.recode.vcf --out missinggeno60 --missing-indv
+
+'''
+
+#Create list of indvs with >70% missingness
+
+'''{r}
+
+#Read the missingness output
+imiss<-read.table("/home/jaa53/galmocks/missinggeno60.imiss", header=T, stringsAsFactors = F)
+#Create a list of indviduals with >70% missingness
+LQ_indv <- imiss %>%
+  filter(F_MISS > 0.7) %>%
+  select(INDV)
+#Output that list as a text file
+write.table(LQ_indv, "/home/jaa53/galmocks/LQ_indvgeno60",col.names=F, row.names=F, quote=F)
+
+'''
+
+#Remove indvs in list - this step was not necessary as no indvs had >70% indvidual missingness
+#However, I proceed with file naming as if the filtering had occurred
+'''{bash}
+
+vcftools --vcf MockDP8minqual30meanDP15geno60imiss90.recode.vcf --out MockDP8minqual30meanDP15geno60imiss70 --recode --recode-INFO-all --remove LQ_indvgeno60
+
+#Remove sites with geno <70 (--max-missing 0.7)
+vcftools --vcf MockDP8minqual30meanDP15geno60imiss70.recode.vcf --max-missing 0.7 --recode --recode-INFO-all --out MockDP8minqual30meanDP15geno70imiss70
+
+#Get indv missingness for geno 70 vcf
+vcftools --vcf MockDP8minqual30meanDP15geno70imiss70.recode.vcf --out missinggeno70 --missing-indv
+
+'''
+
+#Create list of indvs with >50% missingness
+
+'''{r}
+
+#Read the missingness output
+imiss<-read.table("/home/jaa53/galmocks/missinggeno70.imiss", header=T, stringsAsFactors = F)
+#Create a list of indviduals with >50% missingness
+LQ_indv <- imiss %>%
+  filter(F_MISS > 0.5) %>%
+  select(INDV)
+#Output that list as a text file
+write.table(LQ_indv, "/home/jaa53/galmocks/LQ_indvgeno70",col.names=F, row.names=F, quote=F)
+
+'''
+
+#Remove indvs in list
+#Here, one individual (I_370) is removed
+'''{bash}
+
+vcftools --vcf MockDP8minqual30meanDP15geno70imiss70.recode.vcf --out MockDP8minqual30meanDP15geno70imiss50 --recode --recode-INFO-all --remove LQ_indvgeno70
+
+'''
+
+#Filtering using INFO filters
+#Because of the manner in which these SNPs were called, many INFO fields used in O'Leary et al. were not available
+#So iterative filtering continues
+
+#Get indv missingness
+
+'''{bash}
+
+vcftools --vcf MockDP8minqual30meanDP15geno70imiss50.recode.vcf --out missinggeno70miss30 --missing-indv
+
+'''
+
+#Create list of indvs with >30% missingness
+
+'''{r}
+#Read in individual missingness data
+imiss<-read.table("/home/jaa53/galmocks/missinggeno70miss30.imiss", header=T, stringsAsFactors = F)
+#Make a list of those missing more than 30%
+LQ_indv <- imiss %>%
+  filter(F_MISS > 0.3) %>%
+  select(INDV)
+#Write the list a text file
+write.table(LQ_indv, "/home/jaa53/galmocks/LQ_indvgeno70miss30",col.names=F, row.names=F, quote=F)
+
+'''
+
+#Remove indvs in list
+
+'''{bash}
+
+vcftools --vcf MockDP8minqual30meanDP15geno70imiss50.recode.vcf --out MockDP8minqual30meanDP15geno70imiss30 --recode --recode-INFO-all --remove LQ_indvgeno70miss30
+
+
+#Remove sites with geno <90 (--max-missing 0.9)
+vcftools --vcf MockDP8minqual30meanDP15geno70imiss30.recode.vcf --max-missing 0.9 --recode --recode-INFO-all --out MockDP8minqual30meanDP15geno90imiss30
+
+#Remove sites with MQ<50
+vcffilter -f "MQ > 50" MockDP8minqual30meanDP15geno90imiss30.recode.vcf >MockFilteredMQ50.vcf
+
+##Filter for excess depth##
+#First, get mean locus depth for each site
+vcftools --vcf MockFilteredMQ50.vcf --out MockFilteredMQ50 --site-mean-depth
+
+'''
+
+#Now, plot depth histogram to find depth cutoff
+
+'''{r}
+#Read the mean depth data
+depth <- read.table("/home/jaa53/galmocks/MockFilteredMQ50.ldepth.mean",
+                    header=T, stringsAsFactors=F)
+                    
+#Find the mean of the mean depths
+mean <- mean(depth$MEAN_DEPTH)
+
+#Find the standard deviation of the mean depths
+std <- sd(depth$MEAN_DEPTH)
+
+#Find the mode of the mean depths
+mode <- Mode(depth$MEAN_DEPTH)
+
+#Estimate a cutoff based on the mean plus two standard deviations
+cutoff <- sum(mean + (2*std))
+
+#Plot the mean depths
+MeanDepthMocks<-ggplot(depth, aes(x = MEAN_DEPTH)) +
+  geom_histogram(binwidth = 5, color = "black") +
+  labs(x = "mean depth per site")+
+  scale_x_continuous(limits=c(0,100))
+  
+#Save the plot
+ggsave("MeanDepthMocksLimits.png",plot=MeanDepthMocks)
+
+'''
+
+#Based on plot, cutoff of 75 is appropriate
+
+'''{bash}
+
+#Remove loci with mean depth over 75
+vcftools --vcf MockFilteredMQ50.vcf --max-meanDP 75 --recode --recode-INFO-all --out MockFilteredMQ50ED.recode.vcf
+
+#For many analyses, retaining the outgroup is unecessary or undesirable
+#Remove the outgroup individuals
+vcftools --vcf MockFilteredMQ50ED.vcf --out MockFilteredMQ50EDRemoveOutgroup --recode --recode-INFO-all --remove MNAIndvs.txt
+
+#Now that the outgroup is gone, many sites have likely become non-variants
+#Remove the non-variant sites
+vcftools --vcf MockFilteredMQ50EDRemoveOutgroup.recode.vcf --non-ref-ac-any 1 --recode --recode-INFO-all --out MockFilteredMQ50EDRemoveOGNonVar
+
+#Now add a minor allele count = 2 filter
+vcftools --vcf MockFilteredMQ50EDRemoveOGNonVar.recode.vcf --mac 2 --recode --recode-INFO-all --out MockFilteredMQ50EDRemoveOGNonVarMac2.recode.vcf
+
+#For analyses such as phylogenies, it is appropriate to keep the outgroup
+#As such add the minor allele count = 2 filter to MockFilteredMQ50ED.recode.vcf
+vcftools --vcf MockFilteredMQ50ED.recode.vcf --mac 2 --recode --recode-INFO-all --out MockFilteredMQ50EDMac2.recode.vcf
+
+#In both cases, the chromosomes are expressed as strings and some programs will refuse to interpret the chrs as strings
+#So a copy is made in which the chromosome names are converted to integers
+
+#For outgroup removed VCF
+bcftools annotate --rename-chrs RenumberMockChroms.txt MockFilteredMQ50EDRemoveOGNonVarMac2.recode.vcf --output-type z --output MockFilteredMQ50EDRemoveOGNonVarMac2Renumber.vcf.gz
+
+#For VCF with outgroup remaining
+bcftools annotate --rename-chrs RenumberMockChroms.txt MockFilteredMQ50EDMac2.recode.vcf --output-type z --output MockFilteredMQ50EDMac2Renumber.vcf.gz
+
+'''
+
+###Creating neutral data sets###
+
+#For many analyses, separating neutral from coding sites is important
+#Here, we use bedtools --window function to identify coding sites and the 10kb windows around the coding sites
+#Then, those sites can be removed from the vcf with VCFTools
+
+'''{bash}
+#First for VCF without the outgroup
+#Use Bedtools window to find areas of overlap
+bedtools window -a MockFilteredMQ50EDRemoveOGNonVarMac2.recode.vcf -b annotations.gff -w 10000 > Outfile.bed
+
+#Subset the outfile to include only chr and position in a tab-delimited format
+awk 'BEGIN {OFS="\t"}; {print $1,$2 > "CodingSites.txt"}' Outfile.txt
+
+#Now, filter the VCF with VCFTools --exclude-positions and --positions
+#First, the neutralome
+vcftools --gzvcf MockFilteredMQ50EDRemoveOGNonVarMac2.recode.vcf --exclude-positions CodingSites.txt --recode --recode-INFO-all --out Neutralome10kbWindowNoOG
+
+#Next, coding regions
+vcftools --gzvcf MockFilteredMQ50EDRemoveOGNonVarMac2.recode.vcf --positions CodingSites.txt --recode --recode-INFO-all --out FilteredCodingRegionsWinNoOG
+
+##Repeat with outgroup for phylogenies
+#Use Bedtools window to find areas of overlap
+bedtools window -a MockFilteredMQ50EDMac2Renumber.vcf.gz -b annotations.gff -w 10000 > OutgroupOutfile.txt
+
+#Subset the outfile to include only chr and position in a tab-delimited format
+awk 'BEGIN {OFS="\t"}; {print $1,$2 > "OutgroupCodingSites.txt"}' OutgroupOutfile.txt
+
+#Now, filter the VCF with VCFTools --exclude-positions and --positions
+#First, the neutralome
+vcftools --gzvcf MockFilteredMQ50EDMac2Renumber.vcf.gz --exclude-positions OutgroupCodingSites.txt --recode --recode-INFO-all --out FilteredNeutralome10kbWindowWithOutgroup.vcf.gz
+
+#Next, coding regions
+vcftools --gzvcf MockFilteredMQ50EDMac2Renumber.vcf.gz --positions OutgroupCodingSites.txt --recode --recode-INFO-all --out FilteredCodingRegionsWinWithOutgroup
+'''
+
+###########End Filtering###########

@@ -1,0 +1,756 @@
+#Running admixture for K=1-12
+
+'''{bash}
+
+#Covnert VCF to PED file, use the renumbered chromosome version to accomodate Plink
+vcftools --gzvcf MockFilteredMQ50EDRemoveOGNonVarMac2Renumber.vcf.gz --plink --out FinalMac2RenumberRemoveOG
+
+#Convert PED file to BED file
+plink --file FinalMac2RenumberRemoveOG --make-bed --out FinalMac2RenumberRemoveOG --chr-set 41
+
+for i in {1..12};
+do
+	/programs/admixture_linux-1.3.0/admixture --cv FinalMac2RenumberRemoveOG.bed $i -j24 | tee log${i}.out;
+done
+
+'''
+
+#Visualize the results with r
+
+'''{r}
+
+###Hierarchical Admx Plotting###
+
+library(starmie)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(forcats)
+library(ggthemes)
+library(patchwork)
+library(paletteer)
+library(gtools)
+library(stringr)
+library(cowplot)
+library(desiderata)
+
+rm(list=ls())
+
+###Overall - plotting for all###
+## K=5 is optimal (CV=.28)
+BestK<-5
+#Prepare admixture outputs by placing them all into a single directory and
+#specify that dir below
+setwd("/Users/declanhoulihan/Documents/MockingbirdProject/Mac2UseThisNonVarRemoveOGAdmxOutput")
+
+#List all the output files in the working dir
+AllFiles<-list.files(pattern = "\\.Q$")
+#Sort them based on K value
+AllFiles<-str_sort(AllFiles, numeric=T)
+
+#Open the files in AllFiles as df's and store them all under FileList
+FileList<-lapply(AllFiles, read.table)
+
+#List populations in order that aligns with individuals
+Population<-c("Champion", "Champion", "Champion","Dar", "Dar","Dar","Champion","Champion","Champion","Champion","Champion","Gardner","Gardner","Gardner","Gardner","Gardner","Gardner","Gardner","Gardner","Gardner","Isa", "Isa","Mar","Mar","Mar","Pin","Pin","Pin","Champion","SCris","SCris","SCris","SCris","Gen","Gen","Gen","Gen","Gen","Gen","Esp","Esp","Esp","Esp","SCruz","SCruz", "SCruz","SCruz","SCruz","SCruz","SCruz","Wolf","Wolf","Wolf")
+
+#Create a list of ids for individuals
+sample.id<-c(1:length(Population))
+
+#Add columns for population and sample id to each df
+for (i in 1:length(FileList)){
+  FileList[[i]]<-cbind(FileList[[i]], Population, sample.id)
+}
+
+#Arrange each df by population
+for (i in 1:length(FileList)){
+  FileList[[i]]<-arrange(FileList[[i]],Population)
+}
+
+#Simple base r plot
+# for (i in 1:length(FileList)){
+#   barplot(t(FileList[[i]][,c(1:i)]),
+#           col=rainbow(i),
+#           xlab="Individual #",
+#           ylab="Ancestry",
+#           main = i,
+#           border=NA)
+# }
+
+#Get the data ready for plotting with ggplot
+#Convert to long format
+for (i in 1:length(FileList)){
+  FileList[[i]]<-pivot_longer(FileList[[i]], cols = c(1:i),
+                              names_to = "cluster")
+}
+
+#Plot with ggplot(https://luisdva.github.io/rstats/model-cluster-plots/),
+#Note print() is necessary to actually see the plots
+#The for loop allows us to view all the plots
+for (i in 1:length(FileList)){
+  print(ggplot(FileList[[i]], aes(x=factor(sample.id), y=value, fill = factor(cluster)))+
+          geom_col(color = "black", size = 0.2)+
+          facet_grid(~fct_inorder(Population), switch = "x", scales = "free", space = "free")+
+          theme_minimal() +
+          ggtitle(paste0("K=", i))+
+          scale_y_continuous(expand = c(0, 0)) +
+          scale_x_discrete(expand = expansion(add = .5)) +
+          theme(
+            panel.spacing.x = unit(0.1, "lines"),
+            axis.text.x = element_blank(),
+            panel.grid = element_blank()
+          ) +
+          scale_fill_paletteer_d("cartography::pastel.pal", i, direction=1, guide = "none"))
+}
+
+#Now plot only the optimal K value
+OverallBestK <- ggplot(FileList[[BestK]], aes(x=factor(sample.id), y=value, fill = factor(cluster)))+
+  geom_col(color = "black", size = 0.2)+
+  facet_grid(~fct_inorder(Population), switch = "x", scales = "free", space = "free")+
+  theme_minimal() +
+  ggtitle(paste0("All Populations, K=", BestK))+
+  scale_y_continuous(expand = c(0, 0)) +
+  scale_x_discrete(expand = expansion(add = .5)) +
+  xlab("")+
+  ylab("")+
+  theme(
+    panel.spacing.x = unit(0.1, "lines"),
+    axis.text.x = element_blank(),
+    panel.grid = element_blank()) +
+  scale_fill_paletteer_d("cartography::pastel.pal", BestK, direction=1, guide = "none")
+OverallBestK
+
+'''
+
+#Based on the best K value from above, run a hierarchical admixture scheme using the clusters from the best K
+'''{bash}
+
+#Hierarchical admx for non var remove OG
+
+###Cluster 1 - Chapmion and Gardner
+#Make a directory for cluster 1 files
+mkdir ~/ChampGardAdmx/
+cd ~/ChampGardAdmx/
+
+#Create a keep file
+cat > ChampionGardner.txt
+C_254    C_254
+C_256    C_256
+C_270    C_270
+FCh10    FCh10
+FCh14    FCh14
+FCh1    FCh1
+FCh4    FCh4
+FCh8    FCh8
+S143830    S143830
+FG03    FG03
+FG07    FG07
+FG09    FG09
+FG15    FG15
+FG17    FG17
+FG23    FG23
+F_272    F_272
+F_276    F_276
+F_280    F_280
+#Use ctrl-D to complete the file
+
+#keep only champion and gardner individuals with plink
+/programs/plink_linux_x86_64_20221210/plink --file /workdir/jaa53/FinalMac2RenumberRemoveOG --keep ChampionGardner.txt --make-bed --out ChampGard --chr-set 41
+
+#Now run admixture, note that -s time has been added to the admixture run to set the random seed
+#based on the current time - without this runs at k=6 will sometimes start producing Loglikelihood
+#and delta values of nan and the runs will not finish
+#(see https://www.biostars.org/p/180484/#9559083)
+for i in {1..10}
+do
+    /programs/admixture/admixture --cv  ChampGard.bed $i -j40 -s time | tee logChampGard${i}.out
+done
+
+#Make a file with CV errors
+grep -h CV log*.out > ChampionGardnerCV.txt
+
+#Remove the .P files
+rm ChampGard.*.P
+
+#Go back to home directory
+cd ~
+
+###Cluster 2 - Darwin, Isabela, Wolf
+
+#Make a directory for cluster 2 files
+mkdir ~/DarIsaWolfAdmx/
+cd ~/DarIsaWolfAdmx/
+
+#Create a keep file
+cat > DarwinIsabelaWolf.txt
+I_364    I_364
+I_370    I_370
+I_380    I_380
+D_001    D_001
+D_002    D_002
+D_013    D_013
+W_001    W_001
+W_009    W_009
+W_025    W_025
+#Use ctrl-D to complete the file
+
+#Keep only Darwin, Isabela, and Wolf indvs with plink
+/programs/plink_linux_x86_64_20221210/plink --file /workdir/jaa53/FinalMac2RenumberRemoveOG --keep DarwinIsabelaWolf.txt --make-bed --out DarIsaWolf --chr-set 41
+
+#Now run admixture
+for i in {1..10}
+do
+    /programs/admixture/admixture --cv  DarIsaWolf.bed $i -j40 -s time | tee logDarIsaWolf${i}.out
+done
+
+#Make a file with CV errors
+grep -h CV log*.out > DarwinIsabelaWolfCV.txt
+
+#Remove the .P files
+rm DarIsaWolf.*.P
+
+#Go back to working directory
+cd /workdir/jaa53/
+
+###Cluster 3 - Espanola and San Cristobal
+
+#Make a directory for cluster 3 files
+mkdir ~/EspSanCrisAdmx710/
+cd ~/EspSanCrisAdmx710/
+
+#Create a keep file
+cat > EspanolaSanCristobal.txt
+SK36    SK36
+SK45    SK45
+SK55    SK55
+SK62    SK62
+SCbal03    SCbal03
+SCbal09    SCbal09
+SK03    SK03
+SK04    SK04
+#Use ctrl-D to complete the file
+
+#Keep only Espanola and San Cristobal indvs with plink
+/programs/plink_linux_x86_64_20221210/plink --file /workdir/jaa53/FinalMac2RenumberRemoveOG --keep EspanolaSanCristobal.txt --make-bed --recode --out EspSanCris --chr-set 41
+
+#Now run admixture
+for i in {1..10}
+do
+    /programs/admixture/admixture --cv  EspSanCris.bed $i -j40 -s time | tee logEspSanCris${i}.out
+done
+
+#Make a file with CV errors
+grep -h CV log*.out > EspanolaSanCristobalCV.txt
+
+#Remove the .P files
+rm EspSanCris.*.P
+
+#Go back to home directory
+cd ~
+
+###Cluster 4 - Genovesa and San Cristobal
+
+#Make a directory for cluster 4 files
+mkdir ~/GenoSanCrisAdmx910/
+cd ~/GenoSanCrisAdmx910/
+
+#Create a keep file
+cat > GenovesaSanCristobal.txt
+SK09    SK09
+SK13    SK13
+SK22    SK22
+SK25    SK25
+SK28    SK28
+SK35    SK35
+SCbal03    SCbal03
+SCbal09    SCbal09
+SK03    SK03
+SK04    SK04
+#Use ctrl-D to complete the file
+
+#Keep only Genovesa and San Cristobal indvs with plink
+/programs/plink_linux_x86_64_20221210/plink --file /workdir/jaa53/FinalMac2RenumberRemoveOG --keep GenovesaSanCristobal.txt --make-bed --out GenoSanCris --chr-set 41
+
+#Now run admixture
+for i in {1..10}
+do
+    /programs/admixture/admixture --cv GenoSanCris.bed $i -j40 -s time | tee logGenoSanCris${i}.out
+done
+
+/programs/admixture/admixture --cv GenoSanCris.bed 9 -j35 -s time | tee logGenoSanCris9.out
+#Make a file with CV errors
+grep -h CV log*.out > GenovesaSanCristobalCV.txt
+
+#Remove the .P files
+rm GenoSanCris.*.P
+
+#Go back to working directory
+cd ~
+
+###Cluster 5 - Pinta, Marchena, Santa Cruz
+
+#Make a directory for cluster 5 files
+mkdir ~/PinMarSCruzAdmx/
+cd ~/PinMarSCruzAdmx/
+
+#Create a keep file
+cat > PintaMarchenaSantaCruz.txt
+P_001    P_001
+P_016    P_016
+P_017    P_017
+M_182    M_182
+M_192    M_192
+M_208    M_208
+S_001    S_001
+S_005    S_005
+S_140    S_140
+Scz13    Scz13
+Scz21    Scz21
+Scz5    Scz5
+Scz9    Scz9
+#Use ctrl-D to complete the file
+
+#Keep only Pinta, Marchena, and Santa Cruz indvs with plink
+/programs/plink_linux_x86_64_20221210/plink --file /workdir/jaa53/FinalMac2RenumberRemoveOG --keep PintaMarchenaSantaCruz.txt --make-bed --out PinMarSCruz --chr-set 41
+
+#Now run admixture
+for i in {1..10}
+do
+    /programs/admixture/admixture --cv PinMarSCruz.bed $i -j40 -s time | tee logPinMarSCruz${i}.out
+done
+
+#Make a file with CV errors
+grep -h CV log*.out > PintaMarchenaSantaCruzCV.txt
+
+#Remove the .P files
+rm PinMarSCruz.*.P
+
+#Go back to home directory
+cd ~
+
+'''
+
+#Plot the new hierarchical admixture results in R
+'''{R}
+
+###Hierarchical Admx Plotting###
+library(starmie)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(forcats)
+library(ggthemes)
+library(patchwork)
+library(paletteer)
+library(gtools)
+library(stringr)
+library(cowplot)
+library(desiderata)
+
+rm(list=ls())
+
+###Cluster 1 - Champion and Gardner ###
+## K=2 is optimal (CV=.037)
+#Use BestK to set the K value you want in the saved plot, here we plot the assumed K based on number of populations
+BestK<-2
+#Prepare admixture outputs by placing them all into a single directory and
+#specify that dir below
+setwd("~/ChampGardAdmx/")
+
+#List all the output files in the working dir
+AllFiles<-list.files(pattern = "\\.Q$")
+#Sort them based on K value
+AllFiles<-str_sort(AllFiles, numeric=T)
+
+#Open the files in AllFiles as df's and store them all under FileList
+FileList<-lapply(AllFiles, read.table)
+
+#List populations in order that aligns with individuals
+Population<-c("Champion",
+              "Champion","Champion","Champion","Champion","Champion","Champion","Champion","Gardner","Gardner","Gardner","Gardner","Gardner","Gardner","Gardner","Gardner","Gardner","Champion")
+
+#Create a list of ids for individuals
+sample.id<-c(1:length(Population))
+
+#Add columns for population and sample id to each df
+for (i in 1:length(FileList)){
+  FileList[[i]]<-cbind(FileList[[i]], Population, sample.id)
+}
+
+#Arrange each df by population
+for (i in 1:length(FileList)){
+  FileList[[i]]<-arrange(FileList[[i]],Population)
+}
+
+#Get the data ready for plotting with ggplot
+#Convert to long format
+for (i in 1:length(FileList)){
+  FileList[[i]]<-pivot_longer(FileList[[i]], cols = c(1:i),
+                              names_to = "cluster")
+}
+
+Plot with ggplot (https://luisdva.github.io/rstats/model-cluster-plots/),
+Note print() is necessary to actually see the plots
+ for (i in 1:length(FileList)){
+   print(ggplot(FileList[[i]], aes(x=factor(sample.id), y=value, fill = factor(cluster)))+
+           geom_col(color = "black", size = 0.2)+
+           facet_grid(~fct_inorder(Population), switch = "x", scales = "free", space = "free")+
+           theme_minimal() +
+           ggtitle(paste0("K=", i))+
+           scale_y_continuous(expand = c(0, 0)) +
+           scale_x_discrete(expand = expansion(add = .5)) +
+           theme(
+             panel.spacing.x = unit(0.1, "lines"),
+             axis.text.x = element_blank(),
+             panel.grid = element_blank()
+           ) +
+           scale_fill_paletteer_d("cartography::pastel.pal", i, direction=1, guide = "none"))
+ }
+
+#Now plot only the optimal K value
+Cluster1BestK <- ggplot(FileList[[BestK]], aes(x=factor(sample.id), y=value, fill = factor(cluster)))+
+  geom_col(color = "black", size = 0.2)+
+  facet_grid(~fct_inorder(Population), switch = "x", scales = "free", space = "free")+
+  theme_minimal() +
+  ggtitle(paste0("Champion and Gardner, K=", BestK))+
+  scale_y_continuous(expand = c(0, 0)) +
+  scale_x_discrete(expand = expansion(add = .5)) +
+  xlab("")+
+  ylab("")+
+  theme(
+    panel.spacing.x = unit(0.5, "lines"),
+    axis.text.x = element_blank(),
+    panel.grid = element_blank(),
+    strip.text.x = element_text(size = rel(2))) +
+  scale_fill_paletteer_d("cartography::pastel.pal", BestK, direction=1, guide = "none")
+
+Cluster1BestK
+ggsave("Cluster1.pdf",
+       device = "pdf")
+
+###Cluster 2 - Darwin, Isabela, and Wolf ###
+## K=9 is optimal (CV=.046), k=3 is assumed
+BestK<-3
+#Prepare admixture outputs by placing them all into a single directory and
+#specify that dir below
+setwd("DarIsaWolfAdmx")
+
+#List all the output files in the working dir
+AllFiles<-list.files(pattern = "\\.Q$")
+#Sort them based on K value
+AllFiles<-str_sort(AllFiles, numeric=T)
+
+#Open the files in AllFiles as df's and store them all under FileList
+FileList<-lapply(AllFiles, read.table)
+
+#List populations in order that aligns with individuals
+Population<-c("Darwin","Darwin","Darwin","Isabela","Isabela","Wolf","Wolf","Wolf")
+
+#Create a list of ids for individuals
+sample.id<-c(1:length(Population))
+
+#Add columns for population and sample id to each df
+for (i in 1:length(FileList)){
+  FileList[[i]]<-cbind(FileList[[i]], Population, sample.id)
+}
+
+#Arrange each df by population
+for (i in 1:length(FileList)){
+  FileList[[i]]<-arrange(FileList[[i]],Population)
+}
+
+#Get the data ready for plotting with ggplot
+
+#Convert to long format
+for (i in 1:length(FileList)){
+  FileList[[i]]<-pivot_longer(FileList[[i]], cols = c(1:i),
+                              names_to = "cluster")
+}
+
+Plot with ggplot (https://luisdva.github.io/rstats/model-cluster-plots/),
+Note print() is necessary to actually see the plots
+ for (i in 1:length(FileList)){
+   print(ggplot(FileList[[i]], aes(x=factor(sample.id), y=value, fill = factor(cluster)))+
+           geom_col(color = "black", size = 0.2)+
+           facet_grid(~fct_inorder(Population), switch = "x", scales = "free", space = "free")+
+           theme_minimal() +
+           ggtitle(paste0("K=", i))+
+           scale_y_continuous(expand = c(0, 0)) +
+           scale_x_discrete(expand = expansion(add = .5)) +
+           theme(
+             panel.spacing.x = unit(0.1, "lines"),
+             axis.text.x = element_blank(),
+             panel.grid = element_blank()
+           ) +
+           scale_fill_paletteer_d("cartography::pastel.pal", i, direction=1, guide = "none"))
+ }
+
+#Now plot only the optimal K value
+Cluster2BestK <- ggplot(FileList[[BestK]], aes(x=factor(sample.id), y=value, fill = factor(cluster)))+
+  geom_col(color = "black", size = 0.2)+
+  facet_grid(~fct_inorder(Population), switch = "x", scales = "free", space = "free")+
+  theme_minimal() +
+  ggtitle(paste0("Darwin, Isabela, Wolf, K=", BestK))+
+  scale_y_continuous(expand = c(0, 0)) +
+  xlab("")+
+  ylab("")+
+  theme(
+    panel.spacing.x = unit(0.5, "lines"),
+    axis.text.x = element_blank(),
+    panel.grid = element_blank(),
+    strip.text.x = element_text(size = rel(2))) +
+  scale_fill_paletteer_d("cartography::pastel.pal", BestK, direction=1, guide = "none")
+
+Cluster2BestK
+
+ggsave("Cluster2.pdf",
+       device = "pdf")
+
+##Cluster 3 - Española and San Cristóbal##
+#This one is an edge case, Española only barely included some SC in its admx prop
+#Optimal K = 8, assumed K=2
+
+BestK<-2
+#Prepare admixture outputs by placing them all into a single directory and
+#specify that dir below
+setwd("EspSanCrisAdmx")
+
+#List all the output files in the working dir
+AllFiles<-list.files(pattern = "\\.Q$")
+#Sort them based on K value
+AllFiles<-str_sort(AllFiles, numeric=T)
+
+#Open the files in AllFiles as df's and store them all under FileList
+FileList<-lapply(AllFiles, read.table)
+
+#List populations in order that aligns with individuals
+Population<-c("San Cristóbal","San Cristóbal","San Cristóbal","San Cristóbal","Española","Española","Española","Española")
+
+#Create a list of ids for individuals
+sample.id<-c(1:length(Population))
+
+#Add columns for population and sample id to each df
+for (i in 1:length(FileList)){
+  FileList[[i]]<-cbind(FileList[[i]], Population, sample.id)
+}
+
+#Arrange each df by population
+for (i in 1:length(FileList)){
+  FileList[[i]]<-arrange(FileList[[i]],Population)
+}
+
+#Get the data ready for plotting with ggplot
+
+#Convert to long format
+for (i in 1:length(FileList)){
+  FileList[[i]]<-pivot_longer(FileList[[i]], cols = c(1:i),
+                              names_to = "cluster")
+}
+
+Plot with ggplot (https://luisdva.github.io/rstats/model-cluster-plots/),
+Note print() is necessary to actually see the plots
+ for (i in 1:length(FileList)){
+   print(ggplot(FileList[[i]], aes(x=factor(sample.id), y=value, fill = factor(cluster)))+
+           geom_col(color = "black", size = 0.2)+
+           facet_grid(~fct_inorder(Population), switch = "x", scales = "free", space = "free")+
+           theme_minimal() +
+           ggtitle(paste0("K=", i))+
+           scale_y_continuous(expand = c(0, 0)) +
+           scale_x_discrete(expand = expansion(add = .5)) +
+           theme(
+             panel.spacing.x = unit(0.1, "lines"),
+             axis.text.x = element_blank(),
+             panel.grid = element_blank()
+           ) +
+           scale_fill_paletteer_d("cartography::pastel.pal", i, direction=1, guide = "none"))
+ }
+
+#Now plot only the optimal K value
+Cluster3BestK <- ggplot(FileList[[BestK]], aes(x=factor(sample.id), y=value, fill = factor(cluster)))+
+  geom_col(color = "black", size = 0.2)+
+  facet_grid(~fct_inorder(Population), switch = "x", scales = "free", space = "free")+
+  theme_minimal() +
+  ggtitle(paste0("Española and San Cristóbal, K=", BestK))+
+  scale_y_continuous(expand = c(0, 0)) +
+  scale_x_discrete(expand = expansion(add = .5)) +
+  xlab("")+
+  ylab("")+
+  theme(
+    panel.spacing.x = unit(0.5, "lines"),
+    axis.text.x = element_blank(),
+    panel.grid = element_blank(),
+    strip.text.x = element_text(size = rel(2))) +
+  scale_fill_paletteer_d("cartography::pastel.pal", BestK, direction=1, guide = "none")
+
+Cluster3BestK
+ggsave("Cluster3.pdf",
+       device = "pdf")
+
+##Cluster 4 - Genovesa and San Cristóbal##
+#Optimal K = 2, assumed K=2
+BestK<-2
+#Prepare admixture outputs by placing them all into a single directory and
+#specify that dir below
+setwd("GenoSanCrisAdmx")
+
+#List all the output files in the working dir
+AllFiles<-list.files(pattern = "\\.Q$")
+#Sort them based on K value
+AllFiles<-str_sort(AllFiles, numeric=T)
+
+#Open the files in AllFiles as df's and store them all under FileList
+FileList<-lapply(AllFiles, read.table)
+
+#List populations in order that aligns with individuals
+Population<-c("San Cristóbal","San Cristóbal","San Cristóbal","San Cristóbal","Genovesa","Genovesa","Genovesa","Genovesa","Genovesa","Genovesa")
+
+#Create a list of ids for individuals
+sample.id<-c(1:length(Population))
+
+#Add columns for population and sample id to each df
+for (i in 1:length(FileList)){
+  FileList[[i]]<-cbind(FileList[[i]], Population, sample.id)
+}
+
+#Arrange each df by population
+for (i in 1:length(FileList)){
+  FileList[[i]]<-arrange(FileList[[i]],Population)
+}
+
+#Get the data ready for plotting with ggplot
+
+#Convert to long format
+for (i in 1:length(FileList)){
+  FileList[[i]]<-pivot_longer(FileList[[i]], cols = c(1:i),
+                              names_to = "cluster")
+}
+
+Plot with ggplot (https://luisdva.github.io/rstats/model-cluster-plots/),
+Note print() is necessary to actually see the plots
+ for (i in 1:length(FileList)){
+   print(ggplot(FileList[[i]], aes(x=factor(sample.id), y=value, fill = factor(cluster)))+
+           geom_col(color = "black", size = 0.2)+
+           facet_grid(~fct_inorder(Population), switch = "x", scales = "free", space = "free")+
+           theme_minimal() +
+           ggtitle(paste0("K=", i))+
+           scale_y_continuous(expand = c(0, 0)) +
+           scale_x_discrete(expand = expansion(add = .5)) +
+           theme(
+             panel.spacing.x = unit(0.1, "lines"),
+             axis.text.x = element_blank(),
+             panel.grid = element_blank()
+           ) +
+           scale_fill_paletteer_d("cartography::pastel.pal", i, direction=1, guide = "none"))
+ }
+
+Cluster4BestK <- ggplot(FileList[[BestK]], aes(x=factor(sample.id), y=value, fill = factor(cluster)))+
+  geom_col(color = "black", size = 0.2)+
+  facet_grid(~fct_inorder(Population), switch = "x", scales = "free", space = "free")+
+  theme_minimal() +
+  ggtitle(paste0("Genovesa and San Cristóbal, K=", BestK))+
+  scale_y_continuous(expand = c(0, 0)) +
+  scale_x_discrete(expand = expansion(add = .5)) +
+  xlab("")+
+  ylab("")+
+  theme(
+    panel.spacing.x = unit(0.5, "lines"),
+    axis.text.x = element_blank(),
+    panel.grid = element_blank(),
+    strip.text.x = element_text(size = rel(2))) +
+  scale_fill_paletteer_d("cartography::pastel.pal", BestK, direction=1, guide = "none")
+
+Cluster4BestK
+ggsave("Cluster4.pdf",
+       device = "pdf")
+
+##Cluster 5 - Marchena, Pinta, Santa Cruz##
+#Optimal K = 10 (???), this seems like a pretty meaningless result
+#Assumed K=3
+BestK<-3
+#Prepare admixture outputs by placing them all into a single directory and
+#specify that dir below
+setwd("PinMarSCruzAdmx")
+
+
+#List all the output files in the working dir
+AllFiles<-list.files(pattern = "\\.Q$")
+#Sort them based on K value
+AllFiles<-str_sort(AllFiles, numeric=T)
+
+#Open the files in AllFiles as df's and store them all under FileList
+FileList<-lapply(AllFiles, read.table)
+
+#List populations in order that aligns with individuals
+Population<-c("Marchena","Marchena","Marchena","Pinta","Pinta","Pinta","Santa Cruz","Santa Cruz","Santa Cruz","Santa Cruz","Santa Cruz","Santa Cruz","Santa Cruz")
+
+#Create a list of ids for individuals
+sample.id<-c(1:length(Population))
+
+#Add columns for population and sample id to each df
+for (i in 1:length(FileList)){
+  FileList[[i]]<-cbind(FileList[[i]], Population, sample.id)
+}
+
+#Arrange each df by population
+for (i in 1:length(FileList)){
+  FileList[[i]]<-arrange(FileList[[i]],Population)
+}
+
+#Get the data ready for plotting with ggplot
+
+#Convert to long format
+for (i in 1:length(FileList)){
+  FileList[[i]]<-pivot_longer(FileList[[i]], cols = c(1:i),
+                              names_to = "cluster")
+}
+
+Plot with ggplot (https://luisdva.github.io/rstats/model-cluster-plots/),
+Note print() is necessary to actually see the plots
+ for (i in 1:length(FileList)){
+   print(ggplot(FileList[[i]], aes(x=factor(sample.id), y=value, fill = factor(cluster)))+
+           geom_col(color = "black", size = 0.2)+
+           facet_grid(~fct_inorder(Population), switch = "x", scales = "free", space = "free")+
+           theme_minimal() +
+           ggtitle(paste0("K=", i))+
+           scale_y_continuous(expand = c(0, 0)) +
+           scale_x_discrete(expand = expansion(add = .5)) +
+           theme(
+             panel.spacing.x = unit(0.1, "lines"),
+             axis.text.x = element_blank(),
+             panel.grid = element_blank()
+           ) +
+           scale_fill_paletteer_d("cartography::pastel.pal", i, direction=1, guide = "none"))
+ }
+
+Cluster5BestK <- ggplot(FileList[[BestK]], aes(x=factor(sample.id), y=value, fill = factor(cluster)))+
+  geom_col(color = "black", size = 0.2)+
+  facet_grid(~fct_inorder(Population), switch = "x", scales = "free", space = "free")+
+  theme_minimal() +
+  ggtitle(paste0("Marchena, Pinta, Santa Cruz, K=", BestK))+
+  scale_y_continuous(expand = c(0, 0)) +
+  scale_x_discrete(expand = expansion(add = .5)) +
+  xlab("")+
+  ylab("")+
+  theme(
+    panel.spacing.x = unit(0.5, "lines"),
+    axis.text.x = element_blank(),
+    panel.grid = element_blank(),
+    strip.text.x = element_text(size = rel(2))) +
+  scale_fill_paletteer_d("cartography::pastel.pal", BestK, direction=1, guide = "none")
+Cluster5BestK
+ggsave("Cluster5.pdf",
+       device = "pdf")
+
+##Plot all the best K plots together with cowplot##
+
+AllPlots<- plot_grid(OverallBestK,Cluster1BestK,Cluster2BestK,Cluster5BestK,Cluster3BestK,Cluster4BestK,
+                     labels = "AUTO",
+                     ncol = 2)
+AllPlots
+ ggsave("HierAdmxAssumedK.tiff",
+       device = "tiff",
+       dpi = 300,
+       height = 9.72,
+       width = 11.1)
+
+'''

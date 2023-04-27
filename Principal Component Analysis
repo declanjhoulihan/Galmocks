@@ -1,0 +1,103 @@
+###Principal Component Analysis###
+
+'''{bash}
+
+#Make bed file
+/programs/plink-1.9-x86_20210606/plink --vcf Neutralome10kbWindowNoOG.recode.vcf.gz --make-bed --out FilteredNeutralome10kbWindowNoOG --chr-set 40 --allow-extra-chr
+
+'''
+
+'''{R}
+
+##Running the neutral PCA with SNPRelate
+
+rm(list = ls())
+
+library("gdsfmt")
+library("SNPRelate")
+library("dplyr")
+library("paletteer")
+library("ggplot2")
+library("ggdendro")
+library("prismatic")
+library("cowplot")
+
+bed.fn <- "FilteredNeutralome10kbWindowNoOG.bed"
+fam.fn <- "NeutralNoOGforPCA/FilteredNeutralome10kbWindowNoOG.fam"
+bim.fn <- "FilteredNeutralome10kbWindowNoOG.bim"
+
+#Make gds file
+snpgdsBED2GDS(bed.fn, fam.fn, bim.fn, "FilteredNeutralome10kbWindowNoOG.gds")
+
+#Summarize it
+snpgdsSummary("FilteredNeutralome10kbWindowNoOG.gds")
+#Open the gds
+genofile <- snpgdsOpen("FilteredNeutralome10kbWindowNoOG.gds")
+#Run the PCA
+NeutralPCA <- snpgdsPCA(genofile, num.thread=8, autosome.only=F)
+head(round(NeutralPCA$varprop*100, 2))
+
+pc.percent<-NeutralPCA$varprop*100
+head(round(pc.percent, 2))
+
+tab<-data.frame(sample.id = NeutralPCA$sample.id,
+                EV1 = NeutralPCA$eigenvect[,1],
+                EV2 = NeutralPCA$eigenvect[,2],
+                stringsAsFactors = F)
+head(tab)
+
+#Add islands
+
+Islands<-c("Champion","Champion","Champion","Darwin","Darwin","Darwin","Champion","Champion","Champion","Champion","Champion","Gardner","Gardner","Gardner","Gardner","Gardner","Gardner","Gardner","Gardner","Gardner","Isabela","Isabela","Marchena","Marchena","Marchena","Pinta","Pinta","Pinta","Champion","San Cristóbal","San Cristóbal","San Cristóbal","San Cristóbal","Genovesa","Genovesa","Genovesa","Genovesa","Genovesa","Genovesa","Española","Española","Española","Española","Santa Cruz","Santa Cruz","Santa Cruz","Santa Cruz","Santa Cruz","Santa Cruz","Santa Cruz","Wolf","Wolf","Wolf")
+tab<-cbind(tab, Islands)
+
+#Add species
+
+Species<-c("M. trifasciatus","M. trifasciatus","M. trifasciatus","M. parvulus","M. parvulus","M. parvulus","M. trifasciatus","M. trifasciatus","M. trifasciatus","M. trifasciatus","M. trifasciatus","M. trifasciatus","M. trifasciatus","M. trifasciatus","M. trifasciatus","M. trifasciatus","M. trifasciatus","M. trifasciatus","M. trifasciatus","M. trifasciatus","M. parvulus","M. parvulus","M. parvulus","M. parvulus","M. parvulus","M. parvulus","M. parvulus","M. parvulus","M. trifasciatus","M. melanotis","M. melanotis","M. melanotis","M. melanotis","M. parvulus bauri","M. parvulus bauri","M. parvulus bauri","M. parvulus bauri","M. parvulus bauri","M. parvulus bauri","M. macdonaldi","M. macdonaldi","M. macdonaldi","M. macdonaldi","M. parvulus","M. parvulus","M. parvulus","M. parvulus","M. parvulus","M. parvulus","M. parvulus","M. parvulus","M. parvulus","M. parvulus")
+
+tab<-cbind(tab, Species)
+
+#PCA plotted with islands as colors
+NeutralPCAIslands<-ggplot(tab, aes(x=EV2, y=EV1, col= Islands))+
+  geom_point(size=2)+
+  theme_bw()+
+  labs(x="EV2 (8.13%)",y="EV1 (10.84%)")+
+  scale_color_manual(values=c("Española" = "#64a583",
+                              "San Cristóbal" = "#9f79c2",
+                              "Darwin"  = "#FFD800",
+                              "Isabela" = "#FFC500",
+                              "Marchena" = "#FFB100",
+                              "Pinta" = "#FF9E00",
+                              "Santa Cruz" = "#FF8A00",
+                              "Wolf" = "#FF7700",
+                              "Genovesa" = "#c3765c",
+                              "Champion" = "#0c43f5",
+                              "Gardner" = "#9ad5dd"))+
+  scale_fill_discrete(breaks=c("Española", "San Cristóbal", "Gardner", "Champion",
+                               "Genovesa", "Darwin", "Isabela", "Marchena", "Pinta",
+                               "Santa Cruz", "Wolf"))+
+  theme(legend.text = element_text(size = 12),
+        legend.position = c(.9,.5))
+
+NeutralPCAIslands
+ggsave("NeutralPCAIslands.tiff", device = "tiff", dpi = 400)
+
+#PCA plotted with species as colors, matching the figure from Nietlisbach et al.
+
+NeutralPCASpecies<-ggplot(tab, aes(x=EV2, y=EV1, col=Species))+
+  geom_point()+
+  theme_bw()+
+  theme(legend.text = element_text(face=c(rep("italic",5)), size = 12),
+        legend.position = c(.2,.8))+
+  scale_color_manual(values=c("M. macdonaldi" = "#64a583",
+                              "M. melanotis" = "#9f79c2",
+                              "M. parvulus" = "#e0e35e",
+                              "M. trifasciatus" = "#9ad5dd",
+                              "M. parvulus bauri" = "#c3765c"))
+NeutralPCASpecies
+ggsave("NeutralPCASpecies.tiff", device = "tiff", dpi = 400)
+
+plot_grid(NeutralPCASpecies, NeutralPCAIslands, labels = c("A","B"), nrow = 1)
+ggsave("NeutralPCABoth.tiff", device = "tiff", dpi = 400)
+
+'''

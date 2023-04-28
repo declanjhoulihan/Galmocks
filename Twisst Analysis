@@ -139,6 +139,8 @@ python twisst.py -t output.islands1phyml_bioml.w100.trees.gz -w outputislands1.w
 ###Plotting Twisst Results###
 
 #Based on the plotting script provided with Twisst from Simon H. Martin (https://github.com/simonhmartin/twisst/blob/master/example_plot.R)
+###Plotting Twisst Results###
+
 rm(list = ls())
 
 library(ape)
@@ -150,7 +152,7 @@ library(magick)
 library(dplyr)
 library(R.utils)
 
-#Load the plotting functions, this script also listed in this repo with some modifications from the original
+#Load the plotting functions
 source("plot_twisst.R")
 
 ############################## input files ######################################
@@ -204,41 +206,40 @@ top10weights
 ############################## combined plots ##################################
 # there are a functions available to plot both the weightings and the topologies
 #a summary plot shows all the topologies and a bar plot of their relative weightings
-plot.twisst.summary(twisst_data, lwd=3, cex=0.7)
-plot.twisst.summary.boxplot(twisst_data, lwd=3, cex=0.7)
-
-#Same with top 10 topos
-tiff("~/galmocks/Top10Topos.tiff", width = 2200, height = 1500, res = 300)
+#with top 10 topos
+tiff("Top10Topos.tiff", width = 2200, height = 1500, res = 300)
 plot.twisst.summary(twisst_data_top10topos, lwd=3, cex=0.7)
 dev.off()
 
 #Make a histogram of the weightings
 #First, convert the weights to a df
 weightings <- as.data.frame(twisst_data$weights_overall_mean)
+
 #Then rename the column to "Weights"
 colnames(weightings)[1] = "Weights"
+
 #Plot with ggplot
 WeightsHist<-ggplot(weightings, aes(x = Weights))+
   geom_histogram(binwidth = .000001, color = "black")+
   theme_bw()+
   labs(x = "Topology Weight", y = "Count")
-#Get the number of occurrences of each topo
-
-window<-read.delim(window_data_file, sep = "\t")
-weightings<-mutate(weightings, occurrences = round(weightings$Weights*length(window$scaffold)))
-ggplot(weightings, aes(x =occurrences))+
-  geom_histogram(binwidth = 1, color = "black", fill = "grey")+
-  theme_bw()+
-  labs(x = "Topology Weight", y = "Count")
-
-#Boxplot isn't really relevant here
-plot.twisst.summary.boxplot(twisst_data_top10topos, lwd=3, cex=0.7)
 
 #Put the plots together in cowplot
-Topos <- ggdraw()+draw_image("~/galmocks/Top10Topos.tiff")
+Topos <- ggdraw()+draw_image("Top10Topos.tiff")
 ToposAndWeights <- plot_grid(Topos, WeightsHist, labels = "AUTO", ncol = 1)
 ToposAndWeights
 
 tiff("~/galmocks/ToposWeights.tiff", res = 300, height = 2500, width = 2000)
 plot_grid(Topos, WeightsHist, labels = "AUTO", ncol = 1)
 dev.off()
+
+#Get the number of occurrences of each topo
+window<-read.delim(window_data_file, sep = "\t")
+weightings<-mutate(weightings, occurrences = round(weightings$Weights*length(window$scaffold)))
+#And plot the occurrences, same idea as weightings histogram
+ggplot(weightings, aes(x =occurrences))+
+  geom_histogram(binwidth = 1, color = "black", fill = "grey")+
+  theme_bw()+
+  labs(x = "Topology Weight", y = "Count")
+  
+'''

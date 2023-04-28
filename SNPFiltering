@@ -18,7 +18,7 @@ library(SNPfiltR)
 library(vcfR)
 library(memuse)
 #Read the VCF into vcfR
-mockingbirds<-read.vcfR("/home/jaa53/galmocks/mocks57_allrawsnps.vcf")
+mockingbirds<-read.vcfR("mocks57_allrawsnps.vcf")
 #Filter individual sites with a minimum read depth of 8 and a minimum quality score of 30
 mockingbirds<-hard_filter(mockingbirds,depth=8, gq=30)
 setwd("~/galmocks/")
@@ -49,7 +49,7 @@ LQ_indv <- imiss %>%
   filter(F_MISS > 0.9) %>%
   select(INDV)
 #Output that list as a text file
-write.table(LQ_indv, "/home/jaa53/galmocks/LQ_indvgeno50",col.names=F, row.names=F, quote=F)
+write.table(LQ_indv, "LQ_indvgeno50",col.names=F, row.names=F, quote=F)
 
 '''
 
@@ -72,13 +72,13 @@ vcftools --vcf MockDP8minqual30meanDP15geno60imiss90.recode.vcf --out missinggen
 '''{r}
 
 #Read the missingness output
-imiss<-read.table("/home/jaa53/galmocks/missinggeno60.imiss", header=T, stringsAsFactors = F)
+imiss<-read.table("missinggeno60.imiss", header=T, stringsAsFactors = F)
 #Create a list of indviduals with >70% missingness
 LQ_indv <- imiss %>%
   filter(F_MISS > 0.7) %>%
   select(INDV)
 #Output that list as a text file
-write.table(LQ_indv, "/home/jaa53/galmocks/LQ_indvgeno60",col.names=F, row.names=F, quote=F)
+write.table(LQ_indv, "LQ_indvgeno60",col.names=F, row.names=F, quote=F)
 
 '''
 
@@ -101,13 +101,13 @@ vcftools --vcf MockDP8minqual30meanDP15geno70imiss70.recode.vcf --out missinggen
 '''{r}
 
 #Read the missingness output
-imiss<-read.table("/home/jaa53/galmocks/missinggeno70.imiss", header=T, stringsAsFactors = F)
+imiss<-read.table("missinggeno70.imiss", header=T, stringsAsFactors = F)
 #Create a list of indviduals with >50% missingness
 LQ_indv <- imiss %>%
   filter(F_MISS > 0.5) %>%
   select(INDV)
 #Output that list as a text file
-write.table(LQ_indv, "/home/jaa53/galmocks/LQ_indvgeno70",col.names=F, row.names=F, quote=F)
+write.table(LQ_indv, "LQ_indvgeno70",col.names=F, row.names=F, quote=F)
 
 '''
 
@@ -135,13 +135,13 @@ vcftools --vcf MockDP8minqual30meanDP15geno70imiss50.recode.vcf --out missinggen
 
 '''{r}
 #Read in individual missingness data
-imiss<-read.table("/home/jaa53/galmocks/missinggeno70miss30.imiss", header=T, stringsAsFactors = F)
+imiss<-read.table("missinggeno70miss30.imiss", header=T, stringsAsFactors = F)
 #Make a list of those missing more than 30%
 LQ_indv <- imiss %>%
   filter(F_MISS > 0.3) %>%
   select(INDV)
 #Write the list a text file
-write.table(LQ_indv, "/home/jaa53/galmocks/LQ_indvgeno70miss30",col.names=F, row.names=F, quote=F)
+write.table(LQ_indv, "LQ_indvgeno70miss30",col.names=F, row.names=F, quote=F)
 
 '''
 
@@ -168,7 +168,7 @@ vcftools --vcf MockFilteredMQ50.vcf --out MockFilteredMQ50 --site-mean-depth
 
 '''{r}
 #Read the mean depth data
-depth <- read.table("/home/jaa53/galmocks/MockFilteredMQ50.ldepth.mean",
+depth <- read.table("MockFilteredMQ50.ldepth.mean",
                     header=T, stringsAsFactors=F)
                     
 #Find the mean of the mean depths

@@ -1,0 +1,11 @@
+###Calculate D statistics with Dsuite (Malinsky et al., 2020)###
+
+'''{bash}
+
+export LD_LIBRARY_PATH=/usr/local/gcc-7.3.0/lib64:/usr/local/gcc-7.3.0/lib
+
+export PATH=/programs/Dsuite/Build:$PATH
+
+Dsuite Dtrios Neutralome10kbWindowNoOG.recode.vcf SETS.txt --run-name DSuiteGalmocks
+
+'''

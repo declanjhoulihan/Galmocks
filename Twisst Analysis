@@ -1,3 +1,141 @@
+###Twisst Analysis###
+#Using scripts from Simon H. Martin (https://github.com/simonhmartin/twisst and https://github.com/simonhmartin/genomics_general)
+
+'''{bash}
+
+#Running Twisst analysis by islands with only 8 of 11 islands retained
+
+#Make file for indvs to keep
+cat > TwisstRun1.txt
+D_001
+D_002
+D_013
+FG03
+FG07
+FG09
+FG15
+FG17
+FG23
+F_272
+F_276
+F_280
+I_364
+I_380
+P_001
+P_016
+P_017
+SCbal03
+SCbal09
+SK03
+SK04
+SK09
+SK13
+SK22
+SK25
+SK28
+SK35
+W_001
+W_009
+W_025
+L_001
+L_002
+L_003
+#use ^d to exit
+
+#Subset the vcf to include only our individuals of interest for each Twisst run
+vcftools --gzvcf FilteredNeutralome10kbWindowWithOutgroup.vcf.gz --out TwisstIslands1 --recode --recode-INFO-all --keep TwisstRun1.txt --non-ref-ac-any 1
+
+#Rename outgroup samples so phyml recognizes them as outgroups by adding *
+#First, create file with new names
+cat > samplesTorename.txt
+L_001 L_001*
+L_002 L_002*
+L_003 L_003*
+#use ^d to end file
+
+#Then, run in bcftools
+bcftools reheader -s samplesTorename.txt -o TwisstIslandsOutgroupRenamed.vcf TwisstIslands1.recode.vcf
+
+#Convert to geno file
+python3 parseVCF.py -i TwisstIslandsOutgroupRenamed.vcf --skipIndels | gzip > Islands1twisst.geno.gz
+
+#Run phyml to make sliding windows - this time with 100 SNP window
+python3 phyml_sliding_windows.py -g Islands1twisst.geno.gz --prefix output.islands1phyml_bioml.w100 -T 40 -w 100 --windType sites --model GTR --phyml /programs/phyml/bin/phyml -Mi 10 --outgroup L_001*,L_002*,L_003*
+
+#Make a groups file
+cat > GroupsIslands1.txt
+D_001_A    Darwin
+D_002_A    Darwin
+D_013_A    Darwin
+FG03_A    Gardner
+FG07_A    Gardner
+FG09_A    Gardner
+FG15_A    Gardner
+FG17_A    Gardner
+FG23_A    Gardner
+F_272_A    Gardner
+F_276_A    Gardner
+F_280_A    Gardner
+I_364_A    Isabela
+I_380_A    Isabela
+L_001*_A    Outgroup
+L_002*_A    Outgroup
+L_003*_A    Outgroup
+P_001_A    Pinta
+P_016_A    Pinta
+P_017_A    Pinta
+SCbal03_A    SanCristobal
+SCbal09_A    SanCristobal
+SK03_A    SanCristobal
+SK04_A    SanCristobal
+SK09_A    Genovesa
+SK13_A    Genovesa
+SK22_A    Genovesa
+SK25_A    Genovesa
+SK28_A    Genovesa
+SK35_A    Genovesa
+W_001_A    Wolf
+W_009_A    Wolf
+W_025_A    Wolf
+D_001_B    Darwin
+D_002_B    Darwin
+D_013_B    Darwin
+FG03_B    Gardner
+FG07_B    Gardner
+FG09_B    Gardner
+FG15_B    Gardner
+FG17_B    Gardner
+FG23_B    Gardner
+F_272_B    Gardner
+F_276_B    Gardner
+F_280_B    Gardner
+I_364_B    Isabela
+I_380_B    Isabela
+L_001*_B    Outgroup
+L_002*_B    Outgroup
+L_003*_B    Outgroup
+P_001_B    Pinta
+P_016_B    Pinta
+P_017_B    Pinta
+SCbal03_B    SanCristobal
+SCbal09_B    SanCristobal
+SK03_B    SanCristobal
+SK04_B    SanCristobal
+SK09_B    Genovesa
+SK13_B    Genovesa
+SK22_B    Genovesa
+SK25_B    Genovesa
+SK28_B    Genovesa
+SK35_B    Genovesa
+W_001_B    Wolf
+W_009_B    Wolf
+W_025_B    Wolf
+
+#Run the Twisst script - this only allows up to 8 populations
+python twisst.py -t output.islands1phyml_bioml.w100.trees.gz -w outputislands1.weights100.csv.gz --outputTopos islands1topologies100.trees -g Darwin -g Gardner -g Isabela -g Outgroup  -g Pinta -g SanCristobal -g Genovesa -g Wolf --method complete --groupsFile GroupsIslands1.txt --verbose --outgroup Outgroup
+
+'''
+
 ###Plotting Twisst Results###
 
 #Based on the plotting script provided with Twisst from Simon H. Martin (https://github.com/simonhmartin/twisst/blob/master/example_plot.R)

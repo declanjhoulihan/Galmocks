@@ -1,0 +1,160 @@
+###Sliding Window Fst and Dxy###
+
+'''{bash}
+
+#Subset VCFs to only contain indvs from Champion, Gardner, Genovesa, and Santa Cruz
+#i.e. only keep populations with sufficient indvs sampled for Fst to be meaningful (>=6)
+
+#Make a file with indvs to keep
+cat > IndvstoKeep.txt
+C_254
+C_256
+C_270
+FCh10
+FCh14
+FCh1
+FCh4
+FCh8
+FG03
+FG07
+FG09
+FG15
+FG17
+FG23
+F_272
+F_276
+F_280
+S143830
+SK09
+SK13
+SK22
+SK25
+SK28
+SK35
+S_001
+S_005
+S_140
+Scz13
+Scz21
+Scz5
+Scz9
+#Use ctrl-d to end file
+
+#For neutralome
+vcftools --gzvcf FilteredNeutralome10kbWindowWithOutgroup.vcf.gz --keep IndvstoKeep.txt --recode --recode-INFO-all --out FilteredNeutralomeIndvsWin
+
+#For coding regions
+vcftools --gzvcf FilteredCodingRegionsWin.recode.vcf.gz --keep IndvstoKeep.txt --recode --recode-INFO-all --out FilteredCodingRegionsIndvsWin
+
+##Convert vcfs to geno format
+
+#Neutralome
+python parseVCF.py -i FilteredNeutralomeIndvsWin.recode.vcf.gz -o FilteredNeutralomeIndvsWin.geno
+
+#Coding Regions
+python parseVCF.py -i FilteredCodingRegionsIndvsWin.recode.vcf.gz -o FilteredCodingRegionsIndvsWin.geno
+
+
+##Run sliding window Fst using script from Simon Martin (https://github.com/simonhmartin/genomics_general/blob/master/popgenWindows.py)
+
+#Neutralome
+python popgenWindows.py -w 1000 --windType sites -g FilteredNeutralomeIndvsWin.geno -o NeutralomeWinOutput.csv.gz -f phased -T 5 -p Champion -p Gardner -p SantaCruz -p Genovesa --popsFile FstPopFile.txt
+
+#Coding Regions
+python popgenWindows.py -w 1000 --windType sites -g FilteredCodingRegionsIndvsWin.geno -o CodingRegionsOutputWin.csv.gz -f phased -T 5 -p Champion -p Gardner -p SantaCruz -p Genovesa --popsFile FstPopFile.txt
+
+'''
+
+#Visualize results and run statistical analyses
+'''{R}
+
+rm(list=ls())
+
+library(ggplot2)
+library(dplyr)
+library(ggfortify)
+library(paletteer)
+
+#Import the data
+
+Neutralome <- read.csv("NeutralomeWinOutput.csv")
+CodingRegions <- read.csv("CodingRegionsOutputWin.csv")
+
+#Append a column to identify neutralome vs coding region to each df
+#By first making a vector of the type then adding to the df with cbind
+
+#For the coding regions
+Type <- rep("Coding", length(CodingRegions$scaffold))
+CodingRegions <- cbind(CodingRegions, Type)
+
+#For the neutralome
+Type <- rep("Neutral", length(Neutralome$scaffold))
+Neutralome <- cbind(Neutralome, Type)
+
+#Put the two together
+AllWindowFst <- rbind(CodingRegions, Neutralome)
+
+#Let's start by looking between Champion and Genovesa
+ChampGenoFst<-ggplot(AllWindowFst, aes(x = Fst_Champion_Genovesa, fill = Type))+
+  geom_histogram(aes(y =.5*..density..), position = "dodge", binwidth = .01)+
+  scale_fill_paletteer_d("wesanderson::Chevalier1")+
+  xlab(expression(Pairwise~F[ST]~Champion~and~Genovesa))+
+  ylab("Relative Frequency")+
+  xlim(0,1)+
+  theme_bw()+
+  theme(legend.position = c(.9,.8),
+        legend.text = element_text(size = 14),
+        legend.title = element_blank())
+        
+#Perform a t-test on the data, the difference is small but significant - it's .46 vs .48
+t.test(x = CodingRegions$Fst_Champion_Genovesa, y= Neutralome$Fst_Champion_Genovesa)
+
+#With Dxy
+ggplot(AllWindowFst, aes(x = dxy_Champion_Genovesa, fill = Type))+
+  geom_histogram(aes(y =.5*..density..), position = "dodge", binwidth = .01)+
+  scale_fill_paletteer_d("wesanderson::Chevalier1")+
+  xlim(0,1)
+  
+#Perform a t-test on the data
+t.test(x = CodingRegions$dxy_Champion_Genovesa, y= Neutralome$dxy_Champion_Genovesa)
+
+#Plot Fst against Dxy
+ChampGenoFstDxy<-ggplot(AllWindowFst, aes(x = Fst_Champion_Genovesa, y = dxy_Champion_Genovesa, color = Type))+
+  geom_point(alpha = .7)+
+  xlab(expression(Pairwise~F[ST]~Champion~and~Genovesa))+
+  ylab(expression(d[xy]~Champion~and~Genovesa))+
+  theme_bw()+
+  scale_color_paletteer_d("wesanderson::Chevalier1")+
+  theme(legend.position = c(.9,.8),
+        legend.text = element_text(size = 14),
+        legend.title = element_blank())
+
+prow <- plot_grid(
+  ChampGenoFst,
+  ChampGenoFstDxy,
+  ncol = 1,
+  labels = "AUTO")
+
+prow
+ggsave("FstDxySliding.tiff",
+       device = "tiff",
+       dpi = 300,
+       height = 10.5)
+
+#Switch axes
+ggplot(AllWindowFst, aes(y = Fst_Champion_Genovesa, x = dxy_Champion_Genovesa, color = Type))+
+  geom_point()+
+  ggtitle("Dxy vs Fst Champion and Genovesa")+
+  theme_bw()+
+  scale_color_paletteer_d("wesanderson::Chevalier1")
+
+#Subset the low Fst high dxy windows and find where they're located in the genome
+#Fst < .2 and dxy > .13
+LowFstHighDxy <- subset(AllWindowFst, Fst_Champion_Genovesa < .25 & dxy_Champion_Genovesa > .1)
+#Plot those values
+ggplot(LowFstHighDxy, aes(x = start, fill = Type))+
+  scale_fill_paletteer_d("wesanderson::Chevalier1")+
+  geom_histogram()+
+  facet_wrap(~scaffold)
+
+'''

@@ -1,0 +1,84 @@
+###Run SNPhylo in conjunction with phyml to produce a neutral ML bootstrap whole-genome tree###
+
+'''{bash}
+
+#SNPhylo can only accept one outgroup, so first remove two from the vcf (will keep L_001)
+vcftools --gzvcf FilteredNeutralome10kbWindowWithOutgroup.vcf.gz --out Neutralome10kbOneOutgroup --recode --recode-INFO-all --remove-indv L_002 --remove-indv L_003
+
+#Then renumber chrs because SNPhylo needs chromosomes to be numbers not strings
+bcftools annotate --rename-chrs SNPhyloRenumber.txt Neutralome10kbOneOutgroup.recode.vcf --output-type z --output Neutralome10kbOneOutgroupSNPhyloRenumber.vcf.gz
+
+#Unzip it
+gunzip Neutralome10kbOneOutgroupSNPhyloRenumber.vcf.gz
+
+#Run SNPhylo
+snphylo.sh -v Neutralome10kbOneOutgroupSNPhyloRenumber.vcf -l 1 -P NeutralBootstrap -b -B 100 -o L_001
+
+#Due to an issue with our HPC, SNPhylo would not produce a tree but did produce a trimmed dataset in phylip format that we then
+#used with PhyML
+
+#Run the phylip data that SNPhylo produced in PhyML
+phyml -i NeutralBootstrap.phy -b 100
+
+'''
+
+#Visualize the tree with ggtree
+
+'''{r}
+
+rm(list = ls())
+tree<-read.newick("NeutralBootstrap.phy_phyml_tree.txt")
+
+#Plot with ggtree with ind IDs as labels
+ggtree(tree)+
+  geom_treescale()+
+  geom_tiplab(size=3)
+
+#Make a set of vectors that relate individuals to islands
+champion<-c("C_254", "C_256","C_270","FCh10","FCh14","FCh1","FCh4","FCh8","S143830")
+darwin<-c("D_001","D_002","D_013")
+gardner<-c("FG03","FG07","FG09","FG15","FG17","FG23","F_272","F_276","F_280")
+isabela<-c("I_364","I_370","I_380")
+outgroup<-c("L_001*","L_002*","L_003*")
+marchena<-c("M_182","M_192","M_208")
+pinta<-c("P_001","P_016","P_017")
+sancristobal<-c("SCbal03","SCbal09","SK03","SK04")
+genovesa<-c("SK09","SK13","SK22","SK25","SK28","SK35")
+espanola<-c("SK36","SK45","SK55","SK62")
+santacruz<-c("S_001","S_005","S_140","Scz13","Scz21","Scz5","Scz9")
+wolf<-c("W_001","W_009","W_025")
+#Use if else statements to assign islands to inds based on the above vectors
+Islands<-as.vector(ifelse(tree$tip.label %in% champion, 'Champion',
+                          ifelse(tree$tip.label %in% darwin,'Darwin',
+                                 ifelse(tree$tip.label %in% gardner, 'Gardner',
+                                        ifelse(tree$tip.label %in% isabela, 'Isabela',
+                                               ifelse(tree$tip.label %in% outgroup, 'Outgroup',
+                                                      ifelse(tree$tip.label %in% marchena, 'Marchena',
+                                                             ifelse(tree$tip.label %in% pinta, 'Pinta',
+                                                                    ifelse(tree$tip.label %in% sancristobal, 'San Cristóbal',
+                                                                           ifelse(tree$tip.label %in% genovesa, 'Genovesa',
+                                                                                  ifelse(tree$tip.label %in% espanola, 'Española',
+                                                                                         ifelse(tree$tip.label %in% santacruz, 'Santa Cruz',
+                                                                                                ifelse(tree$tip.label %in% wolf, 'Wolf', 'other')))))))))))))
+
+#Replace indv labels with islands
+tree$tip.label<-Islands
+
+
+IslandsTree<-ggtree(tree)+
+  geom_treescale()+
+  geom_tiplab(size=2.5)+
+  geom_text2(aes(label=label, subset = !is.na(as.numeric(label)) & as.numeric(label) > 80), #This only includes BS values above 80
+             size = 2.5,
+             hjust = 1.1,
+             vjust = 1.1)
+IslandsTree
+
+ggsave(file = "NeutralGenomeTree.tiff",
+       plot = IslandsPlot,
+       dpi = 300,
+       width  = 15,
+       height  = 10,
+       device = tiff)
+
+'''

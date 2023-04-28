@@ -1,0 +1,182 @@
+###Calculate LROH and Inbreeding Coefficient with VCFTools###
+
+'''{bash}
+
+#Get inbreeding coefficient
+vcftools --gzvcf FilteredNeutralome10kbWindowWithOutgroup.vcf.gz --het --out NeutralSNPs
+
+#Get LROH
+
+#First, make an array of chr names to loop over since --LROH can only do one chr at a time
+
+#Fetch names with bcftools and list them in an array
+Chroms=($(/programs/bcftools-1.9-r9/bin/bcftools query -f '%CHROM\n' FilteredNeutralome10kbWindowWithOutgroup.vcf.gz | sort | uniq))
+
+#Loop --LROH over the array
+for i in "${Chroms[@]}"
+do
+    vcftools --gzvcf FilteredNeutralome10kbWindowWithOutgroup.vcf.gz  --LROH --chr $i --out LROH$i
+done
+
+'''
+
+#Plot in R
+
+'''{R}
+
+rm(list = ls())
+library(ggplot2)
+library(dplyr)
+library(stringr)
+library(tidyr)
+library(reshape)
+library(ggrepel)
+library(RColorBrewer)
+library(cowplot)
+library(ggpubr)
+
+#Plotting LROH
+#Change to directory that containd the LROH output files
+setwd("NeutralLROHOutput")
+
+#Put all the files in a list
+LROHFiles<-list.files(pattern = "*.LROH")
+
+#Arrange them in order of chrom
+LROHFiles<-str_sort(LROHFiles, numeric = T)
+
+#Open all the files as dfs, and put them in a list
+#Based on solution from stackoverflow:https://stackoverflow.com/a/50200455
+LROHList<-lapply(LROHFiles,
+                 FUN = function(LROHFiles) {
+                   read.table(LROHFiles, header = TRUE)
+                 })
+
+#Combine all the dfs
+# LROHMaster<-rbind(LROHList[1],LROHList[2])
+LROHMasterdf<-merge_all(LROHList)
+
+#Add a column for the length of the LROHs
+LROHMasterdf<-mutate(LROHMasterdf, LROHLength = AUTO_END - AUTO_START)
+
+#Remove rows if LROHLength is less than 10,000 (10kb)
+LROHMasterdf<-LROHMasterdf[LROHMasterdf$LROHLength > 10000,]
+
+#Get total LROH length per individual
+
+INDVTotals<-group_by(LROHMasterdf, INDV) %>%
+  summarise(INDVTotal = sum(LROHLength))
+INDVTotals
+
+#Create a vector of population names
+Population<-c("Champion","Champion","Champion","Darwin","Darwin","Darwin","Gardner",
+"Gardner", "Gardner", "Champion", "Champion", "Champion", "Champion","Champion",
+"Gardner","Gardner","Gardner","Gardner","Gardner","Gardner","Isabela","Isabela",
+"Outgroup", "Outgroup","Outgroup","Marchena","Marchena","Marchena","Pinta","Pinta",
+"Pinta","Santa Cruz","Santa Cruz","Santa Cruz","Champion","San Cristóbal","San Cristóbal",
+"Santa Cruz","Santa Cruz","Santa Cruz","Santa Cruz","San Cristóbal","San Cristóbal",
+"Genovesa","Genovesa","Genovesa","Genovesa","Genovesa","Genovesa","Española","Española",
+"Española","Española","Wolf","Wolf","Wolf")
+
+#Add the populations to  the indv data
+INDVTotals<-cbind(INDVTotals, Population)
+
+#Find the population averages
+PopTotalAvg<-group_by(INDVTotals, Population) %>%
+  summarise(PopAvgLROH = mean(INDVTotal))
+  
+#Plot that in a barchart
+#Shows roughly what should be happening, smaller populations are more inbred and
+#have greater LROH sums compared to large populations like Isabela
+ggplot(PopTotalAvg, aes(x=Population, y=PopAvgLROH))+
+  geom_bar(stat="identity")+
+  theme(axis.text.x = element_text(angle = 45, vjust =1, hjust = 1))
+  
+#Add island area to pop avg df - island areas from
+IslandAreaHa<-c(9.508,    106.3,    6048,    81.174,    1410.8,    458812,    12996,    0,    5940,    55808.6,    98555,    134.4)
+PopTotalAvg<-cbind(PopTotalAvg, IslandAreaHa)
+
+#Log transform the IslandAreaHa data
+PopTotalAvg<-mutate(PopTotalAvg, IslandAreaHAlog = log10(IslandAreaHa))
+
+#Get total length in Mb
+PopTotalAvg<-mutate(PopTotalAvg, LROHLengthMb = PopAvgLROH/(1e+6))
+
+#Get the linear model for LROH vs island area (with log transformed area)
+AreaLM<-PopTotalAvg%>%
+  subset(PopTotalAvg$Population != "Outgroup")%>%
+  lm(LROHLengthMb~IslandAreaHAlog,.)
+summary(AreaLM)
+
+#Plot the two as a scatterplot
+AreaLROH<-PopTotalAvg%>%
+  subset(PopTotalAvg$Population != "Outgroup")%>%
+  ggplot(aes(x=IslandAreaHa, y=LROHLengthMb, label = Population))+
+  geom_point(size = 2.5)+
+  xlab("Island Area (ha)")+
+  ylab("Average Total LROH Length Per Indv by Population (Mb)")+
+  geom_smooth(method = "lm")+
+  theme_bw()+
+  #stat_regline_equation(label.y = 175, aes(label = ..eq.label..))+
+  #stat_regline_equation(label.y = 125, aes(label = ..rr.label..))+
+  geom_text_repel(size = 7, nudge_y = 5)+
+  scale_x_continuous(trans = 'log10', limits = c(1, 1000000))+
+  theme(text = element_text(size = rel(5)))
+ 
+AreaLROH
+ggsave("NeutralAreaLROH.png", AreaLROH, dpi=300)
+
+##Bring in inbreeding coefficient data
+InbreedingIndv <- read.table("NeutralSNPs.het",
+                         header = T)
+#Make it into a data frame
+InbreedingIndv <- as.data.frame(InbreedingIndv)
+
+#Add population info and island area
+InbreedingIndv <- cbind(InbreedingIndv, Population)
+
+#Get average inbreeding for each pop
+PopInbreedingAvg<-group_by(InbreedingIndv, Population) %>%
+  summarise(InbreedingCoef = mean(InbreedingCoef))
+PopInbreedingAvg <- cbind(PopInbreedingAvg, IslandAreaHa)
+
+#Plot it in a simple barchart
+ggplot(PopInbreedingAvg, aes(x=Population, y=InbreedingCoef))+
+  geom_bar(stat="identity")+
+  theme(axis.text.x = element_text(angle = 45, vjust =1, hjust = 1))
+
+AreaHet<-PopInbreedingAvg%>%
+  subset(PopInbreedingAvg$Population != "Outgroup")%>%
+  ggplot(aes(x=IslandAreaHa, y=InbreedingCoef, label = Population))+
+  geom_point(size = 2.5)+
+  xlab("Island Area (ha)")+
+  ylab("Average Inbreeding Coefficient")+
+  geom_smooth(method = lm)+
+  geom_text_repel(size = 7, nudge_y = .015)+
+  theme_bw()+
+  theme(text = element_text(size = rel(5)))+
+  scale_x_continuous(trans = 'log10', limits = c(1, 1000000))
+  
+AreaHet
+ggsave("NeutralAreaLROH.png", AreaLROH, dpi=300)
+
+#Get the log values for island areas
+PopInbreedingAvg<-mutate(PopInbreedingAvg, IslandAreaHAlog = log10(IslandAreaHa))
+
+#Get the linear model for LROH vs island area (with log transformed area)
+AreaHetLM<-PopInbreedingAvg%>%
+  subset(PopInbreedingAvg$Population != "Outgroup")%>%
+  lm(InbreedingCoef~IslandAreaHAlog,.)
+summary(AreaHetLM)
+
+#Plot LROH and het together
+LROHandHet <- plot_grid(AreaLROH, AreaHet, labels = "AUTO", label_size = 20)
+LROHandHet
+
+ggsave("LROHandHet.tiff",
+       device = "tiff",
+       dpi = 300,
+       height = 11,
+       width = 22)
+
+'''
